@@ -29,13 +29,16 @@ from technical_analysis import analyse_ticker
 from ai_agent import build_final_signal
 from notifier import send_signal_notification, send_system_alert
 from signal_logger import log_signal, print_performance_report
+from portal_sender import send_signal_to_portal, test_portal_connection
 
 # Load environment variables from .env file
 load_dotenv()
 
-PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN", "")
-PUSHOVER_USER  = os.getenv("PUSHOVER_USER", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+PUSHOVER_TOKEN      = os.getenv("PUSHOVER_TOKEN", "")
+PUSHOVER_USER       = os.getenv("PUSHOVER_USER", "")
+OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY", "")
+SIGNALIX_PORTAL_URL = os.getenv("SIGNALIX_PORTAL_URL", "")
+BOT_API_KEY         = os.getenv("BOT_API_KEY", "")
 
 
 def validate_config():
@@ -88,8 +91,15 @@ def run_scan():
         # Step 4: Log the signal
         log_signal(signal)
 
-        # Step 5: Send Pushover notification
-        print(f"  [{ticker}] 📲 Sending notification...")
+        # Step 5a: Send to SIGNALIX Portal (dashboard + history)
+        if SIGNALIX_PORTAL_URL and BOT_API_KEY:
+            print(f"  [{ticker}] 🌐 Sending to SIGNALIX portal...")
+            send_signal_to_portal(signal, SIGNALIX_PORTAL_URL, BOT_API_KEY)
+        else:
+            print(f"  [{ticker}] ⚠️  SIGNALIX portal not configured — skipping portal send.")
+
+        # Step 5b: Send Pushover notification (mobile alert)
+        print(f"  [{ticker}] 📲 Sending Pushover notification...")
         success = send_signal_notification(signal, PUSHOVER_TOKEN, PUSHOVER_USER)
 
         if success:
@@ -132,6 +142,13 @@ def run_test():
         print("[TEST] ✅ Test notification sent successfully. Check your device.")
     else:
         print("[TEST] ❌ Failed to send test notification. Check your Pushover credentials.")
+
+    # Test portal connection
+    if SIGNALIX_PORTAL_URL and BOT_API_KEY:
+        print("\n[TEST] Testing SIGNALIX portal connection...")
+        test_portal_connection(SIGNALIX_PORTAL_URL, BOT_API_KEY)
+    else:
+        print("\n[TEST] ⚠️  SIGNALIX_PORTAL_URL or BOT_API_KEY not set — skipping portal test.")
 
     print("\n[TEST] Running a quick scan on 2 assets to verify the full pipeline...")
     test_watchlist = {
