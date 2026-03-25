@@ -22,7 +22,7 @@ def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str) -> bo
 
     Args:
         signal:      The enriched signal dict from build_final_signal()
-        portal_url:  Base URL of the SIGNALIX portal (e.g. https://signalportal-ypjt69nw.manus.space)
+        portal_url:  Base URL of the SIGNALIX portal (e.g. https://signalix.cloud)
         bot_api_key: The BOT_API_KEY secret configured in the portal
 
     Returns:
