@@ -11,7 +11,7 @@ Coordinates the full pipeline:
 
 Usage:
     python3 main.py              # Run once immediately
-    python3 main.py --schedule   # Run on schedule (07:30, 12:00, 16:30 UTC)
+    python3 main.py --schedule   # Run on schedule (09:00, 12:30, 13:30, 18:00, 20:00 UTC)
     python3 main.py --report     # Print performance report and exit
     python3 main.py --test       # Test notifications and connectivity
 """
@@ -128,9 +128,11 @@ def run_test():
         message=(
             "✅ CNH Signal Bot is online and configured correctly.\n\n"
             "The bot will scan European ETFs and indices at:\n"
-            "• 07:30 UTC (before EU market open)\n"
-            "• 12:00 UTC (midday)\n"
-            "• 16:30 UTC (before EU market close)\n\n"
+            "• 09:00 UTC (EU market open)\n"
+            "• 12:30 UTC (pre-US open positioning)\n"
+            "• 13:30 UTC (US market open)\n"
+            "• 18:00 UTC (EU market close)\n"
+            "• 20:00 UTC (pre-US market close)\n\n"
             "You will receive BUY/SELL signals when the AI detects "
             "strong opportunities in your watchlist."
         ),
@@ -170,7 +172,7 @@ def run_test():
 
 def setup_schedule():
     """Configure the scheduler based on config.py SCHEDULE settings."""
-    scan_times = SCHEDULE.get("scan_times", ["07:30", "12:00", "16:30"])
+    scan_times = SCHEDULE.get("scan_times", ["09:00", "12:30", "13:30", "18:00", "20:00"])
     for scan_time in scan_times:
         schedule.every().day.at(scan_time).do(run_scan)
         print(f"[SCHEDULER] Scan scheduled at {scan_time} UTC")

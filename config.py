@@ -65,7 +65,7 @@ SIGNAL = {
 
 # ─── SCHEDULE ────────────────────────────────────────────────────────────────
 SCHEDULE = {
-    "scan_times": ["07:30", "12:00", "16:30"],  # UTC — before EU open, midday, before EU close
+    "scan_times": ["09:00", "12:30", "13:30", "18:00", "20:00"],  # UTC — EU open | pre-US open | US open | EU close | pre-US close
     "timezone":   "Europe/London",
 }
 
