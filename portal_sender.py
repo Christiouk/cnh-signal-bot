@@ -16,7 +16,7 @@ import requests
 from typing import Optional
 
 
-def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str) -> bool:
+def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str, scan_id: str = None) -> bool:
     """
     Send a trading signal to the SIGNALIX portal via tRPC.
 
@@ -44,6 +44,7 @@ def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str) -> bo
             "stopLoss":    float(signal["stop_loss"]) if signal.get("stop_loss") else None,
             "targetPrice": float(signal["take_profit"]) if signal.get("take_profit") else None,
             "aiSummary":   signal.get("ai_summary", ""),
+            "scanId":      scan_id,  # optional: groups signals from the same scan for batch push
             "indicators": {
                 "rsi":          signal.get("rsi"),
                 "macd":         signal.get("macd"),
@@ -51,6 +52,9 @@ def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str) -> bo
                 "volume_surge": signal.get("volume_surge", False),
                 "strength":     signal.get("strength", "WEAK"),
                 "ai_risks":     signal.get("ai_risks", ""),
+                "tf_4h_direction": signal.get("tf_4h_direction", "NEUTRAL"),
+                "tf_4h_rsi":    signal.get("tf_4h_rsi"),
+                "tf_confluence": signal.get("tf_confluence", "NONE"),
             },
         }
     }

@@ -3,7 +3,13 @@ CNH Signal Bot — Technical Analysis Engine
 ============================================
 Computes RSI, MACD, Bollinger Bands, SMA/EMA, ATR, and Volume
 for a given ticker using yfinance + ta library.
-Returns a structured SignalResult with score and metadata.
+
+Dual-timeframe analysis:
+  - Primary: daily candles (1d) — trend direction and score
+  - Secondary: 4-hour candles (4h) — intraday confluence check
+  - Confluence bonus: +1 if both timeframes agree on direction
+  - Divergence penalty: -1 if timeframes disagree
+Returns a structured TechnicalResult with score and metadata.
 """
 
 import yfinance as yf
@@ -20,7 +26,7 @@ class TechnicalResult:
     name:          str
     price:         float
     direction:     str          # "BUY", "SELL", "NEUTRAL"
-    score:         int          # number of aligned indicators (0–7)
+    score:         int          # number of aligned indicators (0–8 with confluence bonus)
     strength:      str          # "WEAK", "MODERATE", "STRONG"
     rsi:           float        = 0.0
     macd_cross:    str          = "NEUTRAL"   # "BULLISH", "BEARISH", "NEUTRAL"
@@ -32,6 +38,10 @@ class TechnicalResult:
     stop_loss:     float        = 0.0
     take_profit:   float        = 0.0
     indicators:    dict         = field(default_factory=dict)
+    # Dual-timeframe fields
+    tf_4h_direction: str        = "NEUTRAL"   # direction from 4h candles
+    tf_4h_rsi:       float      = 0.0
+    tf_confluence:   str        = "NONE"      # "AGREE", "DISAGREE", "NONE"
     error:         Optional[str] = None
 
 
@@ -40,14 +50,14 @@ def fetch_data(ticker: str, period: str, interval: str) -> Optional[pd.DataFrame
     try:
         df = yf.download(ticker, period=period, interval=interval,
                          auto_adjust=True, progress=False)
-        if df.empty or len(df) < 60:
+        if df.empty or len(df) < 30:
             return None
         # Flatten MultiIndex columns if present
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df.dropna(inplace=True)
         return df
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -72,9 +82,9 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         window_slow=cfg["macd_slow"],
         window_sign=cfg["macd_signal"]
     )
-    ind["macd"]        = float(macd_ind.macd().iloc[-1])
-    ind["macd_signal"] = float(macd_ind.macd_signal().iloc[-1])
-    ind["macd_hist"]   = float(macd_ind.macd_diff().iloc[-1])
+    ind["macd"]           = float(macd_ind.macd().iloc[-1])
+    ind["macd_signal"]    = float(macd_ind.macd_signal().iloc[-1])
+    ind["macd_hist"]      = float(macd_ind.macd_diff().iloc[-1])
     ind["macd_hist_prev"] = float(macd_ind.macd_diff().iloc[-2])
 
     # ── Bollinger Bands ───────────────────────────────────────────────────────
@@ -101,8 +111,8 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     ind["atr"] = float(atr_ind.average_true_range().iloc[-1])
 
     # ── Volume ────────────────────────────────────────────────────────────────
-    ind["volume"]     = float(volume.iloc[-1])
-    ind["volume_avg"] = float(volume.rolling(window=cfg["volume_avg_period"]).mean().iloc[-1])
+    ind["volume"]       = float(volume.iloc[-1])
+    ind["volume_avg"]   = float(volume.rolling(window=cfg["volume_avg_period"]).mean().iloc[-1])
     ind["volume_ratio"] = ind["volume"] / ind["volume_avg"] if ind["volume_avg"] > 0 else 1.0
 
     # ── Current Price ─────────────────────────────────────────────────────────
@@ -111,7 +121,7 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     return ind
 
 
-def score_signal(ind: dict) -> tuple[str, int, dict]:
+def score_signal(ind: dict) -> tuple:
     """
     Score the signal based on aligned indicators.
     Returns (direction, score, signal_details).
@@ -131,18 +141,14 @@ def score_signal(ind: dict) -> tuple[str, int, dict]:
     else:
         details["rsi"] = f"NEUTRAL ({ind['rsi']:.1f})"
 
-    # ── MACD Cross ────────────────────────────────────────────────────────────
-    if ind["macd_hist"] > 0 and ind["macd_hist_prev"] <= 0:
+    # ── MACD ──────────────────────────────────────────────────────────────────
+    if ind["macd"] > ind["macd_signal"] and ind["macd_hist"] > ind["macd_hist_prev"]:
         bullish_count += 1
-        details["macd"] = "BULLISH CROSS"
-    elif ind["macd_hist"] < 0 and ind["macd_hist_prev"] >= 0:
+        details["macd"] = "BULLISH CROSSOVER"
+    elif ind["macd"] < ind["macd_signal"] and ind["macd_hist"] < ind["macd_hist_prev"]:
         bearish_count += 1
-        details["macd"] = "BEARISH CROSS"
-    elif ind["macd"] > ind["macd_signal"]:
-        bullish_count += 0.5
-        details["macd"] = "MACD ABOVE SIGNAL"
+        details["macd"] = "BEARISH CROSSOVER"
     else:
-        bearish_count += 0.5
         details["macd"] = "MACD BELOW SIGNAL"
 
     # ── Bollinger Bands ───────────────────────────────────────────────────────
@@ -158,18 +164,18 @@ def score_signal(ind: dict) -> tuple[str, int, dict]:
     # ── SMA Trend ─────────────────────────────────────────────────────────────
     if ind["sma_short"] > ind["sma_long"]:
         bullish_count += 1
-        details["sma"] = f"BULLISH (SMA{ANALYSIS['sma_short']} > SMA{ANALYSIS['sma_long']})"
+        details["sma"] = f"BULLISH (SMA{cfg_a['sma_short']} > SMA{cfg_a['sma_long']})"
     else:
         bearish_count += 1
-        details["sma"] = f"BEARISH (SMA{ANALYSIS['sma_short']} < SMA{ANALYSIS['sma_long']})"
+        details["sma"] = f"BEARISH (SMA{cfg_a['sma_short']} < SMA{cfg_a['sma_long']})"
 
     # ── EMA Trend ─────────────────────────────────────────────────────────────
     if ind["ema_short"] > ind["ema_long"]:
         bullish_count += 1
-        details["ema"] = f"BULLISH (EMA{ANALYSIS['ema_short']} > EMA{ANALYSIS['ema_long']})"
+        details["ema"] = f"BULLISH (EMA{cfg_a['ema_short']} > EMA{cfg_a['ema_long']})"
     else:
         bearish_count += 1
-        details["ema"] = f"BEARISH (EMA{ANALYSIS['ema_short']} < EMA{ANALYSIS['ema_long']})"
+        details["ema"] = f"BEARISH (EMA{cfg_a['ema_short']} < EMA{cfg_a['ema_long']})"
 
     # ── Price vs SMA50 ────────────────────────────────────────────────────────
     if ind["price"] > ind["sma_long"]:
@@ -193,7 +199,6 @@ def score_signal(ind: dict) -> tuple[str, int, dict]:
     # ── Final Direction ───────────────────────────────────────────────────────
     bullish_count = int(bullish_count)
     bearish_count = int(bearish_count)
-
     if bullish_count > bearish_count:
         direction = "BUY"
         score = bullish_count
@@ -207,17 +212,77 @@ def score_signal(ind: dict) -> tuple[str, int, dict]:
     return direction, score, details
 
 
+def get_4h_direction(ticker: str) -> tuple:
+    """
+    Fetch 4-hour candles and return (direction, rsi).
+    Uses a simplified scoring: RSI + MACD + EMA crossover.
+    Returns ("BUY"/"SELL"/"NEUTRAL", rsi_value).
+    Falls back to ("NEUTRAL", 50.0) on any error.
+    """
+    try:
+        # 4h candles: 60 days of data gives ~360 candles (enough for all indicators)
+        df = fetch_data(ticker, period="60d", interval="4h")
+        if df is None or len(df) < 30:
+            return "NEUTRAL", 50.0
+
+        cfg = ANALYSIS
+        close = df["Close"]
+        bull = 0
+        bear = 0
+
+        # RSI
+        rsi_val = float(ta.momentum.RSIIndicator(close=close, window=cfg["rsi_period"]).rsi().iloc[-1])
+        if rsi_val < cfg["rsi_oversold"]:
+            bull += 1
+        elif rsi_val > cfg["rsi_overbought"]:
+            bear += 1
+
+        # MACD
+        macd_ind = ta.trend.MACD(close=close, window_fast=cfg["macd_fast"],
+                                  window_slow=cfg["macd_slow"], window_sign=cfg["macd_signal"])
+        macd_val  = float(macd_ind.macd().iloc[-1])
+        macd_sig  = float(macd_ind.macd_signal().iloc[-1])
+        macd_hist = float(macd_ind.macd_diff().iloc[-1])
+        macd_prev = float(macd_ind.macd_diff().iloc[-2])
+        if macd_val > macd_sig and macd_hist > macd_prev:
+            bull += 1
+        elif macd_val < macd_sig and macd_hist < macd_prev:
+            bear += 1
+
+        # EMA crossover
+        ema_s = float(ta.trend.EMAIndicator(close=close, window=cfg["ema_short"]).ema_indicator().iloc[-1])
+        ema_l = float(ta.trend.EMAIndicator(close=close, window=cfg["ema_long"]).ema_indicator().iloc[-1])
+        if ema_s > ema_l:
+            bull += 1
+        else:
+            bear += 1
+
+        if bull > bear:
+            return "BUY", rsi_val
+        elif bear > bull:
+            return "SELL", rsi_val
+        else:
+            return "NEUTRAL", rsi_val
+
+    except Exception:
+        return "NEUTRAL", 50.0
+
+
 def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
-    """Full technical analysis pipeline for a single ticker."""
+    """
+    Full dual-timeframe technical analysis pipeline for a single ticker.
+    Primary: daily candles. Secondary: 4h candles for confluence.
+    """
     cfg_a = ANALYSIS
     cfg_s = SIGNAL
 
+    # ── Primary: Daily Analysis ───────────────────────────────────────────────
     df = fetch_data(ticker, cfg_a["data_period"], cfg_a["data_interval"])
     if df is None:
         return TechnicalResult(
             ticker=ticker, name=name, price=0.0,
             direction="ERROR", score=0, strength="NONE",
-            error=f"Failed to fetch data for {ticker}"
+            error=f"Failed to fetch daily data for {ticker}"
         )
 
     try:
@@ -230,6 +295,22 @@ def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
         )
 
     direction, score, details = score_signal(ind)
+
+    # ── Secondary: 4h Confluence ──────────────────────────────────────────────
+    tf_4h_dir, tf_4h_rsi = get_4h_direction(ticker)
+    tf_confluence = "NONE"
+
+    if direction != "NEUTRAL" and tf_4h_dir != "NEUTRAL":
+        if direction == tf_4h_dir:
+            # Both timeframes agree — boost score
+            score = min(score + 1, 8)
+            tf_confluence = "AGREE"
+        else:
+            # Timeframes diverge — reduce score (conflicting signal)
+            score = max(score - 1, 0)
+            tf_confluence = "DISAGREE"
+
+    details["tf_4h"] = f"4H: {tf_4h_dir} (RSI {tf_4h_rsi:.1f}) | Confluence: {tf_confluence}"
 
     # ── Strength Classification ───────────────────────────────────────────────
     if score >= cfg_s["strong_signal_score"]:
@@ -264,20 +345,23 @@ def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
         bb_pos = "MIDDLE"
 
     return TechnicalResult(
-        ticker       = ticker,
-        name         = name,
-        price        = round(price, 4),
-        direction    = direction,
-        score        = score,
-        strength     = strength,
-        rsi          = round(ind["rsi"], 2),
-        macd_cross   = macd_cross,
-        bb_position  = bb_pos,
-        sma_trend    = details.get("sma", "NEUTRAL"),
-        ema_trend    = details.get("ema", "NEUTRAL"),
-        volume_surge = ind["volume_ratio"] > 1.5,
-        atr          = round(atr, 4),
-        stop_loss    = stop_loss,
-        take_profit  = take_profit,
-        indicators   = {**ind, **details},
+        ticker         = ticker,
+        name           = name,
+        price          = round(price, 4),
+        direction      = direction,
+        score          = score,
+        strength       = strength,
+        rsi            = round(ind["rsi"], 2),
+        macd_cross     = macd_cross,
+        bb_position    = bb_pos,
+        sma_trend      = details.get("sma", "NEUTRAL"),
+        ema_trend      = details.get("ema", "NEUTRAL"),
+        volume_surge   = ind["volume_ratio"] > 1.5,
+        atr            = round(atr, 4),
+        stop_loss      = stop_loss,
+        take_profit    = take_profit,
+        indicators     = {**ind, **details},
+        tf_4h_direction = tf_4h_dir,
+        tf_4h_rsi      = round(tf_4h_rsi, 2),
+        tf_confluence  = tf_confluence,
     )

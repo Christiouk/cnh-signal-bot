@@ -128,9 +128,9 @@ Analyse the following trading signal for {result.name} ({result.ticker}):
 TECHNICAL INDICATORS:
 - Current Price: {result.price}
 - Signal Direction: {result.direction}
-- Signal Score: {result.score}/7 indicators aligned
+- Signal Score: {result.score}/8 indicators aligned (includes 4h confluence)
 - Signal Strength: {result.strength}
-- RSI (14): {result.rsi}
+- RSI (14, daily): {result.rsi}
 - MACD: {result.macd_cross}
 - Bollinger Bands: Price at {result.bb_position} band
 - SMA Trend: {result.sma_trend}
@@ -138,6 +138,8 @@ TECHNICAL INDICATORS:
 - ATR: {result.atr}
 - Suggested Stop-Loss: {result.stop_loss}
 - Suggested Take-Profit: {result.take_profit}
+- 4H Timeframe Direction: {result.tf_4h_direction} (RSI: {result.tf_4h_rsi})
+- Timeframe Confluence: {result.tf_confluence} (AGREE = both daily+4h aligned, DISAGREE = conflicting)
 
 RECENT NEWS HEADLINES:
 {news_block}
@@ -198,25 +200,29 @@ def build_final_signal(result: TechnicalResult) -> dict:
         strength = "MODERATE"
 
     return {
-        "timestamp":    datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
-        "ticker":       result.ticker,
-        "name":         result.name,
-        "direction":    result.direction,
-        "score":        result.score,
-        "strength":     strength,
-        "price":        result.price,
-        "stop_loss":    result.stop_loss,
-        "take_profit":  result.take_profit,
-        "rsi":          result.rsi,
-        "macd":         result.macd_cross,
-        "bb":           result.bb_position,
-        "sma":          result.sma_trend,
-        "atr":          result.atr,
-        "volume_surge": result.volume_surge,
-        "sentiment":    ai["sentiment"],
-        "confidence":   ai["confidence"],
-        "ai_summary":   ai["summary"],
-        "ai_risks":     ai["risks"],
-        "executed":     "",
-        "result_pct":   "",
+        "timestamp":       datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "ticker":          result.ticker,
+        "name":            result.name,
+        "direction":       result.direction,
+        "score":           result.score,
+        "strength":        strength,
+        "price":           result.price,
+        "stop_loss":       result.stop_loss,
+        "take_profit":     result.take_profit,
+        "rsi":             result.rsi,
+        "macd":            result.macd_cross,
+        "bb":              result.bb_position,
+        "sma":             result.sma_trend,
+        "atr":             result.atr,
+        "volume_surge":    result.volume_surge,
+        "sentiment":       ai["sentiment"],
+        "confidence":      ai["confidence"],
+        "ai_summary":      ai["summary"],
+        "ai_risks":        ai["risks"],
+        # 4h confluence fields
+        "tf_4h_direction": result.tf_4h_direction,
+        "tf_4h_rsi":       result.tf_4h_rsi,
+        "tf_confluence":   result.tf_confluence,
+        "executed":        "",
+        "result_pct":      "",
     }

@@ -20,6 +20,7 @@ Usage:
 import os
 import sys
 import time
+import uuid
 import schedule
 import argparse
 from datetime import datetime
@@ -68,12 +69,16 @@ def run_scan() -> int:
     Returns:
         Number of signals sent.
     """
-    # ── Fetch watchlist (dynamic or static fallback) ─────────────────────────
+    # ── Scan ID: unique per scan batch, used for grouped push notifications ──────────
+    scan_id = str(uuid.uuid4())
+
+    # ── Fetch watchlist (dynamic or static fallback) ───────────────────────────────────────
     watchlist = get_watchlist(SIGNALIX_PORTAL_URL, BOT_API_KEY)
 
     print(f"\n{'='*60}")
     print(f"  CNH SIGNAL BOT — Market Scan")
     print(f"  {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"  Scan ID: {scan_id[:8]}...")
     print(f"{'='*60}")
     print(f"  Scanning {len(watchlist)} assets...\n")
 
@@ -90,7 +95,7 @@ def run_scan() -> int:
             print(f"  [{ticker}] ⚠️  Error: {tech_result.error}")
             continue
 
-        print(f"  [{ticker}] Direction: {tech_result.direction} | Score: {tech_result.score}/7 | RSI: {tech_result.rsi}")
+        print(f"  [{ticker}] Direction: {tech_result.direction} | Score: {tech_result.score}/8 | RSI: {tech_result.rsi} | 4H: {tech_result.tf_4h_direction} ({tech_result.tf_confluence})")
 
         # Step 2: Filter — only proceed if score meets threshold
         if tech_result.direction == "NEUTRAL" or tech_result.score < min_score:
@@ -107,7 +112,7 @@ def run_scan() -> int:
         # Step 5a: Send to SIGNALIX Portal (dashboard + history)
         if SIGNALIX_PORTAL_URL and BOT_API_KEY:
             print(f"  [{ticker}] 🌐 Sending to SIGNALIX portal...")
-            send_signal_to_portal(signal, SIGNALIX_PORTAL_URL, BOT_API_KEY)
+            send_signal_to_portal(signal, SIGNALIX_PORTAL_URL, BOT_API_KEY, scan_id=scan_id)
         else:
             print(f"  [{ticker}] ⚠️  SIGNALIX portal not configured — skipping portal send.")
 
