@@ -9,4 +9,7 @@ COPY . .
 
 RUN mkdir -p logs
 
+# Expose the HTTP trigger port so Railway routes public traffic here
+EXPOSE 8080
+
 CMD ["python", "main.py", "--schedule"]

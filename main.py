@@ -193,15 +193,21 @@ def run_test():
 
 def setup_schedule():
     """Configure the scheduler and start the HTTP trigger server."""
+    # ── Start HTTP trigger server FIRST so Railway health check passes immediately ──
+    # Railway routes public HTTP traffic to PORT (default 8080).
+    # Flask must be listening before the scheduler loop blocks, otherwise Railway
+    # marks the service as unhealthy and the public domain returns 502/fetch failed.
+    from trigger_server import init_trigger_server, start_trigger_server
+    init_trigger_server(run_scan, SIGNALIX_PORTAL_URL, BOT_API_KEY)
+    start_trigger_server(port=TRIGGER_PORT)
+
+    # Give Flask a moment to bind before proceeding
+    time.sleep(1)
+
     scan_times = SCHEDULE.get("scan_times", ["09:00", "12:30", "13:30", "18:00", "20:00"])
     for scan_time in scan_times:
         schedule.every().day.at(scan_time).do(run_scan)
         print(f"[SCHEDULER] Scan scheduled at {scan_time} UTC")
-
-    # ── Start HTTP trigger server (for Railway webhook / Run Scan Now button) ──
-    from trigger_server import init_trigger_server, start_trigger_server
-    init_trigger_server(run_scan, SIGNALIX_PORTAL_URL, BOT_API_KEY)
-    start_trigger_server(port=TRIGGER_PORT)
 
     print(f"\n[SCHEDULER] Bot is running. Press Ctrl+C to stop.\n")
 
