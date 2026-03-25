@@ -34,8 +34,9 @@ from portal_sender import send_signal_to_portal, test_portal_connection
 # Load environment variables from .env file
 load_dotenv()
 
-PUSHOVER_TOKEN      = os.getenv("PUSHOVER_TOKEN", "")
-PUSHOVER_USER       = os.getenv("PUSHOVER_USER", "")
+# Accept both naming variants for Pushover (PUSHOVER_TOKEN or PUSHOVER_APP_TOKEN)
+PUSHOVER_TOKEN      = os.getenv("PUSHOVER_TOKEN") or os.getenv("PUSHOVER_APP_TOKEN", "")
+PUSHOVER_USER       = os.getenv("PUSHOVER_USER") or os.getenv("PUSHOVER_USER_KEY", "")
 OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY", "")
 SIGNALIX_PORTAL_URL = os.getenv("SIGNALIX_PORTAL_URL", "")
 BOT_API_KEY         = os.getenv("BOT_API_KEY", "")
