@@ -2,16 +2,17 @@
 CNH Signal Bot — Main Orchestrator
 =====================================
 Coordinates the full pipeline:
-1. Scans the watchlist using technical analysis
-2. Filters signals above the minimum score threshold
-3. Enriches qualifying signals with AI analysis
-4. Sends push notifications via Pushover
-5. Logs all signals to CSV for performance tracking
-6. Runs on a schedule (configurable in config.py)
+1. Fetches the active watchlist from SIGNALIX portal (dynamic) or config.py (fallback)
+2. Scans each asset using technical analysis
+3. Filters signals above the minimum score threshold
+4. Enriches qualifying signals with AI analysis
+5. Sends push notifications via Pushover
+6. Logs all signals to CSV for performance tracking
+7. Posts signals to the SIGNALIX portal dashboard
 
 Usage:
     python3 main.py              # Run once immediately
-    python3 main.py --schedule   # Run on schedule (09:00, 12:30, 13:30, 18:00, 20:00 UTC)
+    python3 main.py --schedule   # Run on schedule + start HTTP trigger server
     python3 main.py --report     # Print performance report and exit
     python3 main.py --test       # Test notifications and connectivity
 """
@@ -24,7 +25,8 @@ import argparse
 from datetime import datetime
 from dotenv import load_dotenv
 
-from config import WATCHLIST, SIGNAL, SCHEDULE
+from config import SIGNAL, SCHEDULE
+from watchlist_fetcher import get_watchlist
 from technical_analysis import analyse_ticker
 from ai_agent import build_final_signal
 from notifier import send_signal_notification, send_system_alert
@@ -40,6 +42,7 @@ PUSHOVER_USER       = os.getenv("PUSHOVER_USER") or os.getenv("PUSHOVER_USER_KEY
 OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY", "")
 SIGNALIX_PORTAL_URL = os.getenv("SIGNALIX_PORTAL_URL", "")
 BOT_API_KEY         = os.getenv("BOT_API_KEY", "")
+TRIGGER_PORT        = int(os.getenv("PORT", "8080"))
 
 
 def validate_config():
@@ -57,18 +60,27 @@ def validate_config():
         sys.exit(1)
 
 
-def run_scan():
-    """Execute a full market scan across all watchlist assets."""
+def run_scan() -> int:
+    """
+    Execute a full market scan across all watchlist assets.
+    Watchlist is fetched dynamically from the portal; falls back to config.py.
+
+    Returns:
+        Number of signals sent.
+    """
+    # ── Fetch watchlist (dynamic or static fallback) ─────────────────────────
+    watchlist = get_watchlist(SIGNALIX_PORTAL_URL, BOT_API_KEY)
+
     print(f"\n{'='*60}")
     print(f"  CNH SIGNAL BOT — Market Scan")
     print(f"  {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"{'='*60}")
-    print(f"  Scanning {len(WATCHLIST)} assets...\n")
+    print(f"  Scanning {len(watchlist)} assets...\n")
 
     signals_sent = 0
     min_score    = SIGNAL["min_score_to_notify"]
 
-    for ticker, name in WATCHLIST.items():
+    for ticker, name in watchlist.items():
         print(f"  [{ticker}] Analysing {name}...")
 
         # Step 1: Technical Analysis
@@ -127,12 +139,13 @@ def run_test():
     success = send_system_alert(
         message=(
             "✅ CNH Signal Bot is online and configured correctly.\n\n"
-            "The bot will scan European ETFs and indices at:\n"
+            "The bot will scan your watchlist assets at:\n"
             "• 09:00 UTC (EU market open)\n"
             "• 12:30 UTC (pre-US open positioning)\n"
             "• 13:30 UTC (US market open)\n"
             "• 18:00 UTC (EU market close)\n"
             "• 20:00 UTC (pre-US market close)\n\n"
+            "Watchlist is loaded dynamically from the SIGNALIX portal.\n"
             "You will receive BUY/SELL signals when the AI detects "
             "strong opportunities in your watchlist."
         ),
@@ -150,6 +163,14 @@ def run_test():
     if SIGNALIX_PORTAL_URL and BOT_API_KEY:
         print("\n[TEST] Testing SIGNALIX portal connection...")
         test_portal_connection(SIGNALIX_PORTAL_URL, BOT_API_KEY)
+
+        print("\n[TEST] Fetching watchlist from portal...")
+        from watchlist_fetcher import fetch_watchlist_from_portal
+        wl = fetch_watchlist_from_portal(SIGNALIX_PORTAL_URL, BOT_API_KEY)
+        if wl:
+            print(f"[TEST] ✅ Portal watchlist: {list(wl.keys())}")
+        else:
+            print("[TEST] ⚠️  Could not fetch watchlist from portal — will use static fallback.")
     else:
         print("\n[TEST] ⚠️  SIGNALIX_PORTAL_URL or BOT_API_KEY not set — skipping portal test.")
 
@@ -171,17 +192,22 @@ def run_test():
 
 
 def setup_schedule():
-    """Configure the scheduler based on config.py SCHEDULE settings."""
+    """Configure the scheduler and start the HTTP trigger server."""
     scan_times = SCHEDULE.get("scan_times", ["09:00", "12:30", "13:30", "18:00", "20:00"])
     for scan_time in scan_times:
         schedule.every().day.at(scan_time).do(run_scan)
         print(f"[SCHEDULER] Scan scheduled at {scan_time} UTC")
 
+    # ── Start HTTP trigger server (for Railway webhook / Run Scan Now button) ──
+    from trigger_server import init_trigger_server, start_trigger_server
+    init_trigger_server(run_scan, SIGNALIX_PORTAL_URL, BOT_API_KEY)
+    start_trigger_server(port=TRIGGER_PORT)
+
     print(f"\n[SCHEDULER] Bot is running. Press Ctrl+C to stop.\n")
 
     # Send startup notification
     send_system_alert(
-        message=f"CNH Signal Bot started. Scans scheduled at: {', '.join(scan_times)} UTC",
+        message=f"CNH Signal Bot started. Scans scheduled at: {', '.join(scan_times)} UTC\nWatchlist loaded dynamically from SIGNALIX portal.",
         pushover_token=PUSHOVER_TOKEN,
         pushover_user=PUSHOVER_USER,
         title="CNH Signal Bot — Started 🚀"
@@ -194,7 +220,7 @@ def setup_schedule():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CNH Signal Bot")
-    parser.add_argument("--schedule", action="store_true", help="Run on schedule")
+    parser.add_argument("--schedule", action="store_true", help="Run on schedule + start HTTP trigger server")
     parser.add_argument("--report",   action="store_true", help="Print performance report")
     parser.add_argument("--test",     action="store_true", help="Test connectivity")
     args = parser.parse_args()
