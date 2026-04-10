@@ -8,6 +8,11 @@ The tRPC endpoint accepts a JSON POST to:
   POST /api/trpc/bot.ingestSignal
 
 Authentication: API key passed in the request body as `apiKey`.
+
+v4.0 fields added:
+  scoreMax, assetCategory, riskNote, hedgeSuggestion,
+  entryLow, entryHigh, moderateEntryLow, moderateEntryHigh,
+  riskyEntryLow, riskyEntryHigh, closeLow, closeHigh
 """
 
 import os
@@ -24,42 +29,72 @@ def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str, scan_
         signal:      The enriched signal dict from build_final_signal()
         portal_url:  Base URL of the SIGNALIX portal (e.g. https://signalix.cloud)
         bot_api_key: The BOT_API_KEY secret configured in the portal
+        scan_id:     Optional UUID grouping signals from the same scan batch
 
     Returns:
         True if the signal was accepted, False otherwise.
     """
     endpoint = f"{portal_url.rstrip('/')}/api/trpc/bot.ingestSignal"
 
-    # Map bot signal fields to portal schema
+    # ─── Map bot signal fields to portal schema (v4.0) ───────────────────────
     payload = {
         "json": {
+            # ── Auth ──────────────────────────────────────────────────────────
             "apiKey":      bot_api_key,
+
+            # ── Core identity ─────────────────────────────────────────────────
             "ticker":      signal.get("ticker", ""),
             "assetName":   signal.get("name", signal.get("ticker", "")),
             "direction":   signal.get("direction", "BUY"),
+
+            # ── Scoring ───────────────────────────────────────────────────────
             "score":       int(signal.get("score", 0)),
-            "confidence":  signal.get("confidence", "LOW"),
-            "sentiment":   signal.get("sentiment", "NEUTRAL"),
-            "currentPrice": float(signal["price"]) if signal.get("price") else None,
-            "stopLoss":    float(signal["stop_loss"]) if signal.get("stop_loss") else None,
-            "targetPrice": float(signal["take_profit"]) if signal.get("take_profit") else None,
-            "aiSummary":   signal.get("ai_summary", ""),
-            "scanId":      scan_id,  # optional: groups signals from the same scan for batch push
+            "scoreMax":    int(signal.get("score_max", 8)),
+
+            # ── Classification ────────────────────────────────────────────────
+            "confidence":     signal.get("confidence", "LOW"),
+            "sentiment":      signal.get("sentiment", "NEUTRAL"),
+            "assetCategory":  signal.get("asset_category", ""),
+
+            # ── Price levels ──────────────────────────────────────────────────
+            "currentPrice": float(signal["price"])      if signal.get("price")       else None,
+            "stopLoss":     float(signal["stop_loss"])  if signal.get("stop_loss")   else None,
+            "targetPrice":  float(signal["take_profit"]) if signal.get("take_profit") else None,
+
+            # ── Entry ranges (v4.0) ───────────────────────────────────────────
+            "entryLow":          float(signal["entry_low"])          if signal.get("entry_low")          else None,
+            "entryHigh":         float(signal["entry_high"])         if signal.get("entry_high")         else None,
+            "moderateEntryLow":  float(signal["moderate_entry_low"]) if signal.get("moderate_entry_low") else None,
+            "moderateEntryHigh": float(signal["moderate_entry_high"]) if signal.get("moderate_entry_high") else None,
+            "riskyEntryLow":     float(signal["risky_entry_low"])    if signal.get("risky_entry_low")    else None,
+            "riskyEntryHigh":    float(signal["risky_entry_high"])   if signal.get("risky_entry_high")   else None,
+            "closeLow":          float(signal["close_low"])          if signal.get("close_low")          else None,
+            "closeHigh":         float(signal["close_high"])         if signal.get("close_high")         else None,
+
+            # ── AI analysis ───────────────────────────────────────────────────
+            "aiSummary":       signal.get("ai_summary", ""),
+            "riskNote":        signal.get("risk_note", ""),
+            "hedgeSuggestion": signal.get("hedge_suggestion", ""),
+
+            # ── Scan grouping ─────────────────────────────────────────────────
+            "scanId": scan_id,
+
+            # ── Technical indicators (JSON blob) ──────────────────────────────
             "indicators": {
-                "rsi":          signal.get("rsi"),
-                "macd":         signal.get("macd"),
-                "bollinger":    signal.get("bb"),
-                "volume_surge": signal.get("volume_surge", False),
-                "strength":     signal.get("strength", "WEAK"),
-                "ai_risks":     signal.get("ai_risks", ""),
+                "rsi":             signal.get("rsi"),
+                "macd":            signal.get("macd"),
+                "bollinger":       signal.get("bb"),
+                "volume_surge":    signal.get("volume_surge", False),
+                "strength":        signal.get("strength", "WEAK"),
+                "ai_risks":        signal.get("ai_risks", ""),
                 "tf_4h_direction": signal.get("tf_4h_direction", "NEUTRAL"),
-                "tf_4h_rsi":    signal.get("tf_4h_rsi"),
-                "tf_confluence": signal.get("tf_confluence", "NONE"),
+                "tf_4h_rsi":       signal.get("tf_4h_rsi"),
+                "tf_confluence":   signal.get("tf_confluence", "NONE"),
             },
         }
     }
 
-    # Remove None values from the top-level json object
+    # Remove None values from the top-level json object (optional fields)
     payload["json"] = {k: v for k, v in payload["json"].items() if v is not None}
 
     headers = {
@@ -83,7 +118,7 @@ def send_signal_to_portal(signal: dict, portal_url: str, bot_api_key: str, scan_
             print(f"[PORTAL] ✅ Signal sent to SIGNALIX portal (ID: {signal_id})")
             return True
         else:
-            print(f"[PORTAL] ❌ Portal returned HTTP {response.status_code}: {response.text[:200]}")
+            print(f"[PORTAL] ❌ Portal returned HTTP {response.status_code}: {response.text[:300]}")
             return False
 
     except requests.exceptions.ConnectionError:
@@ -109,10 +144,14 @@ def test_portal_connection(portal_url: str, bot_api_key: str) -> bool:
         "name":        "Connection Test",
         "direction":   "BUY",
         "score":       1,
+        "score_max":   8,
         "confidence":  "LOW",
         "sentiment":   "NEUTRAL",
+        "asset_category": "Equity",
         "price":       100.0,
         "ai_summary":  "This is an automated connection test from the CNH Signal Bot.",
+        "risk_note":   "Test signal — no real risk assessment.",
+        "hedge_suggestion": "N/A — test signal.",
     }
 
     result = send_signal_to_portal(test_signal, portal_url, bot_api_key)

@@ -95,7 +95,7 @@ def run_scan() -> int:
             print(f"  [{ticker}] ⚠️  Error: {tech_result.error}")
             continue
 
-        print(f"  [{ticker}] Direction: {tech_result.direction} | Score: {tech_result.score}/8 | RSI: {tech_result.rsi} | 4H: {tech_result.tf_4h_direction} ({tech_result.tf_confluence})")
+        print(f"  [{ticker}] Direction: {tech_result.direction} | Score: {tech_result.score}/8 | RSI: {tech_result.rsi:.1f} | 4H: {tech_result.tf_4h_direction} ({tech_result.tf_confluence}) | Category: {tech_result.asset_category}")
 
         # Step 2: Filter — only proceed if score meets threshold
         if tech_result.direction == "NEUTRAL" or tech_result.score < min_score:
@@ -144,12 +144,14 @@ def run_test():
     success = send_system_alert(
         message=(
             "✅ CNH Signal Bot is online and configured correctly.\n\n"
-            "The bot will scan your watchlist assets at:\n"
-            "• 09:00 UTC (EU market open)\n"
-            "• 12:30 UTC (pre-US open positioning)\n"
-            "• 13:30 UTC (US market open)\n"
-            "• 18:00 UTC (EU market close)\n"
-            "• 20:00 UTC (pre-US market close)\n\n"
+            "The bot will scan your watchlist assets at (London time):\n"
+            "• 09:00 — EU market open (DAX, FTSE, Eurostoxx)\n"
+            "• 12:00 — Mid-session check (pre-US positioning)\n"
+            "• 13:30 — US market open (NYSE/NASDAQ)\n"
+            "• 14:15 — Post-US-open momentum check\n"
+            "• 16:30 — EU market close (DAX, FTSE close)\n"
+            "• 20:00 — US afternoon session\n"
+            "• 01:00 — Asia session open (overnight)\n\n"
             "Watchlist is loaded dynamically from the SIGNALIX portal.\n"
             "You will receive BUY/SELL signals when the AI detects "
             "strong opportunities in your watchlist."
@@ -191,7 +193,7 @@ def run_test():
         if result.error:
             print(f"[TEST] ❌ Error: {result.error}")
         else:
-            print(f"[TEST] ✅ Price: {result.price} | Direction: {result.direction} | Score: {result.score}/7 | RSI: {result.rsi}")
+            print(f"[TEST] ✅ Price: {result.price} | Direction: {result.direction} | Score: {result.score}/8 | RSI: {result.rsi:.1f} | Category: {result.asset_category}")
 
     print("\n[TEST] Pipeline test complete.")
 
@@ -212,13 +214,13 @@ def setup_schedule():
     scan_times = SCHEDULE.get("scan_times", ["09:00", "12:30", "13:30", "18:00", "20:00"])
     for scan_time in scan_times:
         schedule.every().day.at(scan_time).do(run_scan)
-        print(f"[SCHEDULER] Scan scheduled at {scan_time} UTC")
+        print(f"[SCHEDULER] Scan scheduled at {scan_time} London time")
 
     print(f"\n[SCHEDULER] Bot is running. Press Ctrl+C to stop.\n")
 
     # Send startup notification
     send_system_alert(
-        message=f"CNH Signal Bot started. Scans scheduled at: {', '.join(scan_times)} UTC\nWatchlist loaded dynamically from SIGNALIX portal.",
+        message=f"CNH Signal Bot started. Scans scheduled at: {', '.join(scan_times)} London time\nWatchlist loaded dynamically from SIGNALIX portal.",
         pushover_token=PUSHOVER_TOKEN,
         pushover_user=PUSHOVER_USER,
         title="CNH Signal Bot — Started 🚀"

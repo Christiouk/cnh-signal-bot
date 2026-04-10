@@ -51,6 +51,7 @@ In your Railway project, go to **Variables** and add the following:
 | `PUSHOVER_USER_KEY` | `u8akv2e1hzbqcxpm9hchpsurs7j6kk` | Your Pushover User Key |
 | `SIGNALIX_PORTAL_URL` | `https://signalportal-ypjt69nw.manus.space` | Your SIGNALIX portal URL |
 | `BOT_API_KEY` | `...` | The BOT_API_KEY from your SIGNALIX portal secrets |
+| `TZ` | `Europe/London` | **Required** — sets the system timezone so the `schedule` library fires at London wall-clock time (BST in summer, GMT in winter) |
 
 > **Important:** Never commit these values to GitHub. Railway's Variables panel is the secure place for secrets.
 
@@ -71,8 +72,10 @@ restartPolicyType = "always"
 
 This means the bot will:
 - Start automatically when deployed
-- Run scans at 07:30, 12:00, and 16:30 UTC every day
+- Run scans at 09:00, 12:00, 13:30, 14:15, 16:30, 20:00, and 01:00 **London time** every day
 - Restart automatically if it crashes
+
+> **Timezone note:** The `TZ=Europe/London` variable ensures the bot fires at London wall-clock time. During BST (last Sunday March → last Sunday October) this is UTC+1; during GMT (winter) it is UTC+0. Railway does not set a timezone by default, so this variable is mandatory.
 
 ---
 
@@ -82,7 +85,7 @@ This means the bot will:
 2. Watch the **Logs** tab — you should see:
    ```
    [SIGNALIX] Bot starting in SCHEDULE mode...
-   [SIGNALIX] Scans scheduled at: 07:30, 12:00, 16:30 UTC
+   [SIGNALIX] Scans scheduled at: 09:00, 12:00, 13:30, 14:15, 16:30, 20:00, 01:00 London time
    ```
 3. The first scan will run at the next scheduled time.
 

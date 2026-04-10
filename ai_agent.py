@@ -189,6 +189,67 @@ def analyse_with_ai(result: TechnicalResult) -> dict:
     return analyse_with_groq(result)
 
 
+def _build_risk_note(result: TechnicalResult, ai_risks: str) -> str:
+    """
+    Build a concise risk note combining AI-generated risks with
+    key technical context (confluence, RSI extremes, volume).
+    """
+    parts = []
+    if ai_risks and ai_risks != "No specific risks identified.":
+        parts.append(ai_risks)
+    if result.tf_confluence == "DISAGREE":
+        parts.append("4H and daily timeframes are conflicting — reduce position size.")
+    if result.rsi > 75:
+        parts.append(f"RSI at {result.rsi:.1f} — overbought territory, risk of short-term reversal.")
+    elif result.rsi < 25:
+        parts.append(f"RSI at {result.rsi:.1f} — oversold territory, risk of short-term bounce.")
+    if not parts:
+        if result.direction == "BUY":
+            parts.append(f"Monitor stop-loss at {result.stop_loss} for invalidation of bullish thesis.")
+        elif result.direction == "SELL":
+            parts.append(f"Monitor stop-loss at {result.stop_loss} for invalidation of bearish thesis.")
+    return " ".join(parts)
+
+
+def _build_hedge_suggestion(result: TechnicalResult) -> str:
+    """
+    Generate a simple hedge suggestion based on asset category and direction.
+    """
+    cat = result.asset_category
+    direction = result.direction
+
+    if cat == "Index":
+        if direction == "BUY":
+            return "Consider protective puts on the index or a short position in a correlated inverse ETF as a hedge."
+        else:
+            return "Consider a long position in a defensive sector ETF (e.g. utilities, healthcare) as a partial hedge."
+    elif cat == "ETF":
+        if direction == "BUY":
+            return "Consider a small allocation to a short-duration bond ETF to hedge equity downside."
+        else:
+            return "Consider a long position in a broad market ETF to hedge concentrated short exposure."
+    elif cat == "Commodity":
+        if direction == "BUY":
+            return "Consider a correlated commodity producer equity as a leveraged hedge (e.g. oil major for crude signals)."
+        else:
+            return "Consider a long position in consumer discretionary equities that benefit from lower commodity prices."
+    elif cat == "FX":
+        if direction == "BUY":
+            return "Consider a small position in the counter-currency as a partial hedge against FX reversal."
+        else:
+            return "Consider a long position in the base currency as a directional hedge."
+    elif cat == "Crypto":
+        if direction == "BUY":
+            return "Consider a stablecoin allocation (USDC/USDT) as a partial hedge against crypto volatility."
+        else:
+            return "Consider a long position in Bitcoin dominance as a relative hedge within the crypto space."
+    else:  # Equity
+        if direction == "BUY":
+            return "Consider a protective put option or a short position in a sector peer as a hedge."
+        else:
+            return "Consider a long position in a sector ETF to hedge single-stock short exposure."
+
+
 def build_final_signal(result: TechnicalResult) -> dict:
     """Combine technical analysis + AI sentiment into a final signal package."""
     ai = analyse_with_ai(result)
@@ -199,12 +260,16 @@ def build_final_signal(result: TechnicalResult) -> dict:
     elif ai["confidence"] == "LOW" and strength == "STRONG":
         strength = "MODERATE"
 
+    risk_note       = _build_risk_note(result, ai.get("risks", ""))
+    hedge_suggestion = _build_hedge_suggestion(result)
+
     return {
         "timestamp":       datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
         "ticker":          result.ticker,
         "name":            result.name,
         "direction":       result.direction,
         "score":           result.score,
+        "score_max":       8,   # max score with 4H confluence bonus
         "strength":        strength,
         "price":           result.price,
         "stop_loss":       result.stop_loss,
@@ -223,6 +288,18 @@ def build_final_signal(result: TechnicalResult) -> dict:
         "tf_4h_direction": result.tf_4h_direction,
         "tf_4h_rsi":       result.tf_4h_rsi,
         "tf_confluence":   result.tf_confluence,
+        # v4.0 new fields
+        "asset_category":       result.asset_category,
+        "risk_note":            risk_note,
+        "hedge_suggestion":     hedge_suggestion,
+        "entry_low":            result.entry_low,
+        "entry_high":           result.entry_high,
+        "moderate_entry_low":   result.moderate_entry_low,
+        "moderate_entry_high":  result.moderate_entry_high,
+        "risky_entry_low":      result.risky_entry_low,
+        "risky_entry_high":     result.risky_entry_high,
+        "close_low":            result.close_low,
+        "close_high":           result.close_high,
         "executed":        "",
         "result_pct":      "",
     }

@@ -1,7 +1,7 @@
 """
 CNH Signal Bot — Configuration
 ================================
-Watchlist of European ETFs and Indices.
+Watchlist of trading assets — indices, ETFs, Oil & Gas, and equities.
 All tickers are Yahoo Finance compatible.
 """
 
@@ -9,30 +9,30 @@ All tickers are Yahoo Finance compatible.
 # Format: { "ticker": "Human-readable name" }
 
 WATCHLIST = {
-    # ── Pan-European Broad Market ETFs ────────────────────────────────────────
-    "VWRL.L":   "Vanguard FTSE All-World ETF (LSE)",
-    "IWDA.AS":  "iShares Core MSCI World ETF (Euronext Amsterdam)",
-    "CSPX.L":   "iShares Core S&P 500 ETF (LSE)",
-    "VUSA.L":   "Vanguard S&P 500 ETF (LSE)",
-    "EQQQ.L":   "Invesco NASDAQ-100 ETF (LSE)",
-
-    # ── European Equity ETFs ──────────────────────────────────────────────────
-    "EXW1.DE":  "iShares Core EURO STOXX 50 ETF (XETRA)",
-    "MEUD.PA":  "Lyxor Core MSCI Europe ETF (Euronext Paris)",
-    "VEUR.AS":  "Vanguard FTSE Developed Europe ETF (Euronext Amsterdam)",
-    "EZU":      "iShares MSCI Eurozone ETF (NYSE)",
-
-    # ── European Indices (for reference / sentiment) ──────────────────────────
-    "^STOXX50E": "Euro Stoxx 50 Index",
-    "^FTSE":     "FTSE 100 Index (UK)",
+    # ── Core Indices (Primary Focus) ──────────────────────────────────────────
     "^GDAXI":    "DAX 40 Index (Germany)",
+    "^FTSE":     "FTSE 100 Index (UK)",
+    "^GSPC":     "S&P 500 Index (US)",
+    "^NDX":      "NASDAQ-100 Index (US Tech)",
+    "^STOXX50E": "Euro Stoxx 50 Index",
     "^FCHI":     "CAC 40 Index (France)",
-    "^IBEX":     "IBEX 35 Index (Spain)",
-    "^PSI20":    "PSI 20 Index (Portugal)",
 
-    # ── Sector ETFs (European focus) ─────────────────────────────────────────
-    "IQQH.DE":  "iShares Global Clean Energy ETF (XETRA)",
-    "SXLK.SW":  "SPDR MSCI Europe Technology ETF (SIX Swiss)",
+    # ── Index ETFs (Tradeable via Trading 212) ────────────────────────────────
+    "CSPX.L":   "iShares Core S&P 500 ETF (LSE)",
+    "EQQQ.L":   "Invesco NASDAQ-100 ETF (LSE)",
+    "EXW1.DE":  "iShares Core EURO STOXX 50 ETF (XETRA)",
+    "VWRL.L":   "Vanguard FTSE All-World ETF (LSE)",
+
+    # ── Oil & Gas ─────────────────────────────────────────────────────────────
+    "CL=F":     "Crude Oil WTI Futures",
+    "BZ=F":     "Brent Crude Oil Futures",
+    "BP.L":     "BP plc (LSE)",
+    "SHEL.L":   "Shell plc (LSE)",
+    "XOM":      "ExxonMobil (NYSE)",
+
+    # ── High-Conviction Equities ──────────────────────────────────────────────
+    "MARA":     "Marathon Digital Holdings (NASDAQ)",
+    "PONY":     "Pony AI (NASDAQ)",
 }
 
 # ─── ANALYSIS PARAMETERS ─────────────────────────────────────────────────────
@@ -64,9 +64,22 @@ SIGNAL = {
 }
 
 # ─── SCHEDULE ────────────────────────────────────────────────────────────────
+# All times are LONDON TIME (Europe/London = GMT in winter, BST = GMT+1 in summer).
+# The `schedule` library uses local system time, so Railway MUST have TZ=Europe/London set.
+#
+# Session slots (London time):
+#   09:00 — EU market open       (DAX, FTSE, Eurostoxx open)
+#   12:00 — Mid-session check    (EU lunch, pre-US positioning)
+#   13:30 — US market open       (NYSE/NASDAQ open)
+#   14:15 — Post-US-open check   (momentum confirmation)
+#   16:30 — EU market close      (DAX, FTSE close)
+#   20:00 — US afternoon session (pre-US close positioning)
+#   01:00 — Asia session open    (overnight signals)
 SCHEDULE = {
-    "scan_times": ["09:00", "12:30", "13:30", "18:00", "20:00"],  # UTC — EU open | pre-US open | US open | EU close | pre-US close
+    "scan_times": ["09:00", "12:00", "13:30", "14:15", "16:30", "20:00", "01:00"],
     "timezone":   "Europe/London",
+    # IMPORTANT: Set TZ=Europe/London in Railway environment variables so the
+    # `schedule` library fires at the correct London wall-clock time.
 }
 
 # ─── NEWS FEEDS (RSS) ────────────────────────────────────────────────────────

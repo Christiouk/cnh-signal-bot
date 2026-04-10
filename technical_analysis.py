@@ -42,6 +42,16 @@ class TechnicalResult:
     tf_4h_direction: str        = "NEUTRAL"   # direction from 4h candles
     tf_4h_rsi:       float      = 0.0
     tf_confluence:   str        = "NONE"      # "AGREE", "DISAGREE", "NONE"
+    # v4.0 Entry range fields (calculated from ATR)
+    entry_low:              float = 0.0   # Conservative entry low
+    entry_high:             float = 0.0   # Conservative entry high
+    moderate_entry_low:     float = 0.0   # Moderate entry low
+    moderate_entry_high:    float = 0.0   # Moderate entry high
+    risky_entry_low:        float = 0.0   # Risky entry low
+    risky_entry_high:       float = 0.0   # Risky entry high
+    close_low:              float = 0.0   # Target close range low
+    close_high:             float = 0.0   # Target close range high
+    asset_category:         str   = ""    # e.g. "Index", "ETF", "Commodity", "Equity"
     error:         Optional[str] = None
 
 
@@ -268,6 +278,90 @@ def get_4h_direction(ticker: str) -> tuple:
         return "NEUTRAL", 50.0
 
 
+# ─── Asset Category Map ───────────────────────────────────────────────────────
+_CATEGORY_MAP: dict[str, str] = {
+    # Indices
+    "^GDAXI": "Index", "^FTSE": "Index", "^GSPC": "Index", "^NDX": "Index",
+    "^STOXX50E": "Index", "^FCHI": "Index", "^DJI": "Index", "^RUT": "Index",
+    # ETFs
+    "CSPX.L": "ETF", "EQQQ.L": "ETF", "EXW1.DE": "ETF", "VWRL.L": "ETF",
+    "SPY": "ETF", "QQQ": "ETF", "IWM": "ETF", "GLD": "ETF", "SLV": "ETF",
+    "IWDA.AS": "ETF",
+    # Commodities / Futures
+    "CL=F": "Commodity", "BZ=F": "Commodity", "GC=F": "Commodity",
+    "SI=F": "Commodity", "NG=F": "Commodity", "HO=F": "Commodity",
+    "RB=F": "Commodity", "ZW=F": "Commodity", "ZC=F": "Commodity",
+    # FX
+    "EURUSD=X": "FX", "GBPUSD=X": "FX", "USDJPY=X": "FX", "EURGBP=X": "FX",
+    "EUR/USD": "FX", "GBP/USD": "FX",
+    # Crypto
+    "BTC-USD": "Crypto", "ETH-USD": "Crypto", "BNB-USD": "Crypto",
+    "SOL-USD": "Crypto", "XRP-USD": "Crypto",
+    # Oil & Gas equities
+    "BP.L": "Equity", "SHEL.L": "Equity", "XOM": "Equity",
+    # High-conviction equities
+    "MARA": "Equity", "PONY": "Equity", "AAPL": "Equity", "MSFT": "Equity",
+    "NVDA": "Equity", "TSLA": "Equity", "AMZN": "Equity", "GOOG": "Equity",
+}
+
+
+def _get_asset_category(ticker: str) -> str:
+    """Return the asset category for a given ticker, defaulting to 'Equity'."""
+    return _CATEGORY_MAP.get(ticker, "Equity")
+
+
+def _calc_entry_ranges(price: float, atr: float, direction: str) -> dict:
+    """
+    Calculate three entry range tiers (Conservative, Moderate, Risky)
+    and a target close range, all derived from ATR.
+
+    Conservative: wait for a 0.3x ATR pullback before entering
+    Moderate:     enter within 0.5x ATR of current price
+    Risky:        enter immediately within 0.15x ATR of current price
+    Close target: take-profit zone (2.0–2.5x ATR from entry)
+    """
+    if direction == "BUY":
+        # Conservative: buy the dip — price must pull back 0.3 ATR
+        entry_low  = round(price - atr * 0.50, 4)
+        entry_high = round(price - atr * 0.20, 4)
+        # Moderate: near current price
+        mod_low  = round(price - atr * 0.20, 4)
+        mod_high = round(price + atr * 0.10, 4)
+        # Risky: buy now at market
+        risky_low  = round(price - atr * 0.05, 4)
+        risky_high = round(price + atr * 0.15, 4)
+        # Close target range
+        close_low  = round(price + atr * 2.0, 4)
+        close_high = round(price + atr * 2.5, 4)
+    elif direction == "SELL":
+        # Conservative: sell the rally — price must bounce 0.3 ATR
+        entry_low  = round(price + atr * 0.20, 4)
+        entry_high = round(price + atr * 0.50, 4)
+        # Moderate
+        mod_low  = round(price - atr * 0.10, 4)
+        mod_high = round(price + atr * 0.20, 4)
+        # Risky: sell now at market
+        risky_low  = round(price - atr * 0.15, 4)
+        risky_high = round(price + atr * 0.05, 4)
+        # Close target range
+        close_low  = round(price - atr * 2.5, 4)
+        close_high = round(price - atr * 2.0, 4)
+    else:
+        entry_low = entry_high = mod_low = mod_high = 0.0
+        risky_low = risky_high = close_low = close_high = 0.0
+
+    return {
+        "entry_low":           entry_low,
+        "entry_high":          entry_high,
+        "moderate_entry_low":  mod_low,
+        "moderate_entry_high": mod_high,
+        "risky_entry_low":     risky_low,
+        "risky_entry_high":    risky_high,
+        "close_low":           close_low,
+        "close_high":          close_high,
+    }
+
+
 def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
     """
     Full dual-timeframe technical analysis pipeline for a single ticker.
@@ -344,6 +438,12 @@ def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
     else:
         bb_pos = "MIDDLE"
 
+    # ── Entry Ranges (v4.0) ──────────────────────────────────────────────────────
+    entry_ranges = _calc_entry_ranges(price, atr, direction)
+
+    # ── Asset Category ──────────────────────────────────────────────────────────
+    asset_category = _get_asset_category(ticker)
+
     return TechnicalResult(
         ticker         = ticker,
         name           = name,
@@ -364,4 +464,14 @@ def analyse_ticker(ticker: str, name: str) -> TechnicalResult:
         tf_4h_direction = tf_4h_dir,
         tf_4h_rsi      = round(tf_4h_rsi, 2),
         tf_confluence  = tf_confluence,
+        # v4.0 entry ranges
+        entry_low           = entry_ranges["entry_low"],
+        entry_high          = entry_ranges["entry_high"],
+        moderate_entry_low  = entry_ranges["moderate_entry_low"],
+        moderate_entry_high = entry_ranges["moderate_entry_high"],
+        risky_entry_low     = entry_ranges["risky_entry_low"],
+        risky_entry_high    = entry_ranges["risky_entry_high"],
+        close_low           = entry_ranges["close_low"],
+        close_high          = entry_ranges["close_high"],
+        asset_category      = asset_category,
     )
